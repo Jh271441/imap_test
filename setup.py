@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="imap_test",
-    version="0.1.0",
+    version="0.1.1",
     author="JunhaoChen",
     author_email="609752056@qq.com",
     description="Apollo map and Opendrive map converter",
