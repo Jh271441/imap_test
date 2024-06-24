@@ -290,7 +290,35 @@ class Opendrive2Apollo(Convertor):
       else:
         left_sample.s = point3d.s
         right_sample.s = point3d.s
+  
+  def add_road_sample(self, pb_lane, lane, lane_section):
+    cur_lane_id = int(lane.lane_id)
+    total_s = lane.center_line[0].s
+    # print("-----------Lane: {}".format(lane.lane_id))
+    for i, point3d in enumerate(lane.center_line):
+      lane_width = lane.get_width_by_s(point3d.s)
+      left_dist = math.sqrt((point3d.x - lane_section.leftmost_boundary()[0][i].x) *
+                            (point3d.x - lane_section.leftmost_boundary()[0][i].x) +
+                            (point3d.y - lane_section.leftmost_boundary()[0][i].y) *
+                            (point3d.y - lane_section.leftmost_boundary()[0][i].y))
+      right_dist = math.sqrt((point3d.x - lane_section.rightmost_boundary()[0][i].x) *
+                             (point3d.x - lane_section.rightmost_boundary()[0][i].x) +
+                             (point3d.y - lane_section.rightmost_boundary()[0][i].y) *
+                             (point3d.y - lane_section.rightmost_boundary()[0][i].y))
 
+      # 1. left sample
+      left_road_sample = pb_lane.left_road_sample.add()
+      left_road_sample.width = left_dist
+      # 2. right sample
+      right_road_sample = pb_lane.right_road_sample.add()
+      right_road_sample.width = right_dist
+      # left lane's should be reverse
+      if cur_lane_id > 0:
+          left_road_sample.s = total_s - point3d.s
+          right_road_sample.s = total_s - point3d.s
+      else:
+          left_road_sample.s = point3d.s
+          right_road_sample.s = point3d.s
 
   def add_lane_neighbors(self, pb_lane, xodr_road, idx, lane):
     for lane_id in lane.left_neighbor_forward:
@@ -425,6 +453,8 @@ class Opendrive2Apollo(Convertor):
     self.add_lane_boundary(pb_lane, lane)
     # add lane sample
     self.add_lane_sample(pb_lane, lane)
+    # add road sample
+    self.add_road_sample(pb_lane, lane, lane_section)
     # add neighbor
     self.add_lane_neighbors(pb_lane, xodr_road, idx, lane)
     # predecessor road
