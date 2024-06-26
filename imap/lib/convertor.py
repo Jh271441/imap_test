@@ -149,8 +149,9 @@ class Opendrive2Apollo(Convertor):
       return file_name.rsplit('.', 1)[0]
     return None
 
-  def set_parameters(self, only_driving = True):
+  def set_parameters(self, only_driving = True, reverse = False):
     self.only_driving = only_driving
+    self.reverse = reverse
 
   def convert_proj_txt(self, proj_txt):
     if proj_txt is None:
@@ -677,10 +678,11 @@ class Opendrive2Apollo(Convertor):
 
       # print("id: {}, left/right reverse lane_id: {}/{}".format(pb_lane.id.id, left_reverse_lane_id,
       #                                                          right_reverse_lane_id))
-      if right_reverse_lane_id != "":
+      if right_reverse_lane_id != "" and right_reverse_lane_id not in pb_lane.right_neighbor_reverse_lane_id:
         # right_count += 1
-        pb_lane.right_neighbor_reverse_lane_id.add().id = right_reverse_lane_id
-      if left_reverse_lane_id != "":
+
+          pb_lane.right_neighbor_reverse_lane_id.add().id = right_reverse_lane_id
+      if left_reverse_lane_id != "" and left_reverse_lane_id not in pb_lane.left_neighbor_reverse_lane_id:
         # left_count += 1
         pb_lane.left_neighbor_reverse_lane_id.add().id = left_reverse_lane_id
 
@@ -710,7 +712,8 @@ class Opendrive2Apollo(Convertor):
       # Todo(zero): need to complete signal
       self.convert_signal(xodr_road, pb_last_section)
 
-    self.add_reverse_neighbors()
+    if self.reverse:
+      self.add_reverse_neighbors()
 
   def _is_valid_junction(self, xodr_junction):
     connecting_roads = set()

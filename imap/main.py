@@ -27,17 +27,17 @@ from imap.lib.draw import add_editor, show_map
 from imap.lib.convertor import Opendrive2Apollo
 
 
-def convert_map_format(input_path, output_path):
+def convert_map_format(input_path, output_path, reverse=False):
     opendrive2apollo = Opendrive2Apollo(input_path, output_path)
     # todo(zero): only lane type is driving add relationship!!!
-    opendrive2apollo.set_parameters(only_driving=False)
+    opendrive2apollo.set_parameters(only_driving=False, reverse=reverse)
     opendrive2apollo.convert()
     opendrive2apollo.save_map()
 
 
-def show_open_drive_map(map_file):
+def show_open_drive_map(map_file, reverse=False):
     opendrive2apollo = Opendrive2Apollo(map_file)
-    opendrive2apollo.set_parameters(only_driving=False)
+    opendrive2apollo.set_parameters(only_driving=False, reverse=reverse)
     opendrive2apollo.convert()
 
 
@@ -58,6 +58,9 @@ def main(args=sys.argv):
     parser.add_argument(
         "-l", "--lane", action="store", type=str, required=False,
         help="Find lane by lane id")
+    parser.add_argument(
+        "-r", "--reverse", action="store_true", required=False,
+        help="Whether to add reverse neighbor lanes of different roads")
 
     parser.add_argument(
         "-f", "--format", action="store", type=str, required=False,
@@ -105,7 +108,7 @@ def main(args=sys.argv):
         if not map_file.is_file():
             logging.error("File not exist! '{}'".format(args.input))
             return
-        convert_map_format(args.input, args.output)
+        convert_map_format(args.input, args.output, args.reverse)
 
 
 if __name__ == "__main__":
