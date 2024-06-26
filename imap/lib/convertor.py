@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-
+import copy
 # Copyright 2021 daohu527 <daohu527@gmail.com>
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,6 +33,8 @@ from imap.lib.proto_utils import (
 from imap.lib.draw import draw_line, show
 from imap.lib.convex_hull import convex_hull, aabb_box
 from imap.lib.proj_helper import latlon2utm
+
+from imap.lib.lane_manager import LaneMarker, LaneManager
 
 
 # Distance between stop line and pedestrian crossing
@@ -132,6 +134,15 @@ class Opendrive2Apollo(Convertor):
     # UTM coordinate
     self.origin_x = 0.0
     self.origin_y = 0.0
+
+    # Lane manager
+    self.lane_manager = LaneManager()
+    self.reverse_direction_map = {
+      "left_to_right": "right_to_left",
+      "right_to_left": "left_to_right",
+      "top_to_bottom": "bottom_to_top",
+      "bottom_to_top": "top_to_bottom"
+    }
 
   def _get_file_name(self, file_name):
     if file_name and file_name.endswith((".txt", ".bin")):
@@ -511,6 +522,14 @@ class Opendrive2Apollo(Convertor):
         if pb_lane is not None:
           pb_road_section.lane_id.add().id = pb_lane.id.id
 
+          # [cjh][2024.6.26] Add lane to lane manager
+          lane_marker = LaneManager.create_lane_marker(pb_lane)
+          if lane_marker.direction != "turn" and xodr_road.junction_id == "-1":
+            is_middle_lane = len(pb_lane.left_neighbor_forward_lane_id) > 0 and len(
+              pb_lane.right_neighbor_forward_lane_id) > 0
+            if not is_middle_lane:
+              self.lane_manager.add_lane(pb_lane.id.id, lane_marker)
+
       # The last section of road, which used to generate stop lines for
       # traffic lights
       pb_last_section = []
@@ -519,6 +538,14 @@ class Opendrive2Apollo(Convertor):
         if pb_lane is not None:
           pb_road_section.lane_id.add().id = pb_lane.id.id
           pb_last_section.append(pb_lane)
+
+          # [cjh][2024.6.26] Add lane to lane manager
+          lane_marker = LaneManager.create_lane_marker(pb_lane)
+          if lane_marker.direction != "turn" and xodr_road.junction_id == "-1":
+            is_middle_lane = len(pb_lane.left_neighbor_forward_lane_id) > 0 and len(
+              pb_lane.right_neighbor_forward_lane_id) > 0
+            if not is_middle_lane:
+              self.lane_manager.add_lane(pb_lane.id.id, lane_marker)
     return pb_last_section
 
 
@@ -582,6 +609,82 @@ class Opendrive2Apollo(Convertor):
         for pb_lane in pb_last_section:
           self.construct_signal_overlap(pb_lane, pb_signal)
 
+  def add_reverse_neighbors(self):
+    """
+    Add reverse neighbors for each lane (can belong to different road)
+    :return:
+    """
+    # for k, v in self.lane_manager.id_to_marker.items():
+      # print("lane_id: {}, lane_marker: {}".format(k, v))
+      # pass
+    # print("lane_manager size: {}".format(len(self.lane_manager)))
+    # left_count = 0
+    # right_count = 0
+    lane_width = 4
+    for pb_lane in self.pb_map.lane:
+      if pb_lane.id.id not in self.lane_manager.id_to_marker:
+        continue
+      # print("lane_id: {}, lane_type: {}, lane_length: {}".format(pb_lane.id.id, pb_lane.type, pb_lane.length))
+      lane_marker = self.lane_manager.get_lane_marker(pb_lane.id.id)
+      # print(lane_marker.direction, pb_lane.for)
+      start_point = lane_marker.start_point
+      end_point = lane_marker.end_point
+      left_reverse_start_point = copy.deepcopy(end_point)
+      left_reverse_end_point = copy.deepcopy(start_point)
+      right_reverse_start_point = copy.deepcopy(end_point)
+      right_reverse_end_point = copy.deepcopy(start_point)
+      left_reverse_lane_id = ""
+      right_reverse_lane_id = ""
+      if lane_marker.direction == "left_to_right":
+        left_reverse_start_point.y += lane_width
+        left_reverse_end_point.y += lane_width
+        right_reverse_start_point.y -= lane_width
+        right_reverse_end_point.y -= lane_width
+        left_reverse_lane_id = self.lane_manager.get_lane_id(LaneMarker(
+          "right_to_left", left_reverse_start_point, left_reverse_end_point))
+        right_reverse_lane_id = self.lane_manager.get_lane_id(LaneMarker(
+          "right_to_left", right_reverse_start_point, right_reverse_end_point))
+
+      elif lane_marker.direction == "right_to_left":
+        left_reverse_start_point.y -= lane_width
+        left_reverse_end_point.y -= lane_width
+        right_reverse_start_point.y += lane_width
+        right_reverse_end_point.y += lane_width
+        left_reverse_lane_id = self.lane_manager.get_lane_id(LaneMarker(
+          "left_to_right", left_reverse_start_point, left_reverse_end_point))
+        right_reverse_lane_id = self.lane_manager.get_lane_id(LaneMarker(
+          "left_to_right", right_reverse_start_point, right_reverse_end_point))
+
+      elif lane_marker.direction == "top_to_bottom":
+        left_reverse_start_point.x += lane_width
+        left_reverse_end_point.x += lane_width
+        right_reverse_start_point.x -= lane_width
+        right_reverse_end_point.x -= lane_width
+        left_reverse_lane_id = self.lane_manager.get_lane_id(LaneMarker(
+            "bottom_to_top", left_reverse_start_point, left_reverse_end_point))
+        right_reverse_lane_id = self.lane_manager.get_lane_id(LaneMarker(
+            "bottom_to_top", right_reverse_start_point, right_reverse_end_point))
+
+      elif lane_marker.direction == "bottom_to_top":
+        left_reverse_start_point.x -= lane_width
+        left_reverse_end_point.x -= lane_width
+        right_reverse_start_point.x += lane_width
+        right_reverse_end_point.x += lane_width
+        left_reverse_lane_id = self.lane_manager.get_lane_id(LaneMarker(
+            "top_to_bottom", left_reverse_start_point, left_reverse_end_point))
+        right_reverse_lane_id = self.lane_manager.get_lane_id(LaneMarker(
+            "top_to_bottom", right_reverse_start_point, right_reverse_end_point))
+
+      # print("id: {}, left/right reverse lane_id: {}/{}".format(pb_lane.id.id, left_reverse_lane_id,
+      #                                                          right_reverse_lane_id))
+      if right_reverse_lane_id != "":
+        # right_count += 1
+        pb_lane.right_neighbor_reverse_lane_id.add().id = right_reverse_lane_id
+      if left_reverse_lane_id != "":
+        # left_count += 1
+        pb_lane.left_neighbor_reverse_lane_id.add().id = left_reverse_lane_id
+
+    # print("count: {}/{}".format(left_count, right_count))
 
   def convert_roads(self):
     for _, xodr_road in self.xodr_map.roads.items():
@@ -606,6 +709,8 @@ class Opendrive2Apollo(Convertor):
       pb_last_section = self.convert_lane(xodr_road, pb_road)
       # Todo(zero): need to complete signal
       self.convert_signal(xodr_road, pb_last_section)
+
+    self.add_reverse_neighbors()
 
   def _is_valid_junction(self, xodr_junction):
     connecting_roads = set()
